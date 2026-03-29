@@ -153,7 +153,7 @@ if __name__ == "__main__":
         print("Download complete.\n")
 
     # Setup
-    client = PageIndexClient(workspace=WORKSPACE)
+    client = PageIndexClient(workspace=str(WORKSPACE))
 
     # Step 1: Index PDF and view tree structure
     print("=" * 60)
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     if doc_id:
         print(f"\nLoaded cached doc_id: {doc_id}")
     else:
-        doc_id = client.index(PDF_PATH)
+        doc_id = client.index(str(PDF_PATH))
         print(f"\nIndexed. doc_id: {doc_id}")
     print("\nTree Structure (top-level sections):")
     structure = json.loads(client.get_document_structure(doc_id))
