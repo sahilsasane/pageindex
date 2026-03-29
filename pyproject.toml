@@ -17,3 +17,6 @@ dev = [
     "basedpyright>=1.38.4",
     "ruff>=0.15.8",
 ]
+
+[tool.setuptools.packages.find]
+  include = ["pageindex*"]
