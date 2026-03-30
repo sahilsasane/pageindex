@@ -31,16 +31,14 @@ def _count_pages(doc_info: dict[str, Any]) -> int:
     return get_number_of_pages(doc_info["path"])
 
 
-def _get_pdf_page_content(doc_info: dict[str, Any], page_nums: list[int]) -> list[dict[str, Any]]:
+def _get_pdf_page_content(
+    doc_info: dict[str, Any], page_nums: list[int]
+) -> list[dict[str, Any]]:
     """Extract text for specific PDF pages (1-indexed). Prefer cached pages, fallback to PDF."""
     cached_pages = doc_info.get("pages")
     if cached_pages:
         page_map = {p["page"]: p["content"] for p in cached_pages}
-        return [
-            {"page": p, "content": page_map[p]}
-            for p in page_nums
-            if p in page_map
-        ]
+        return [{"page": p, "content": page_map[p]} for p in page_nums if p in page_map]
     path = doc_info["path"]
     with open(path, "rb") as f:
         pdf_reader = pypdf.PdfReader(f)
@@ -52,7 +50,9 @@ def _get_pdf_page_content(doc_info: dict[str, Any], page_nums: list[int]) -> lis
         ]
 
 
-def _get_md_page_content(doc_info: dict[str, Any], page_nums: list[int]) -> list[dict[str, Any]]:
+def _get_md_page_content(
+    doc_info: dict[str, Any], page_nums: list[int]
+) -> list[dict[str, Any]]:
     """
     For Markdown documents, 'pages' are line numbers.
     Find nodes whose line_num falls within [min(page_nums), max(page_nums)] and return their text.

@@ -7,9 +7,31 @@ import random
 import re
 from io import BytesIO
 
-import utils
+from .utils import (
+    ChatGPT_API,
+    ChatGPT_API_async,
+    ChatGPT_API_with_finish_reason,
+    ConfigLoader,
+    JsonLogger,
+    add_node_text,
+    add_preface_if_needed,
+    convert_page_to_int,
+    convert_physical_index_to_int,
+    count_tokens,
+    create_clean_structure_for_description,
+    extract_json,
+    generate_doc_description,
+    generate_summaries_for_structure,
+    get_json_content,
+    get_page_tokens,
+    get_pdf_name,
+    post_processing,
+    remove_structure_text,
+    write_node_id,
+)
 
 
+################### check title in page #########################################################
 async def check_title_appearance(item, page_list, start_index=1, model=None):
     title = item["title"]
     if "physical_index" not in item or item["physical_index"] is None:
@@ -39,8 +61,8 @@ async def check_title_appearance(item, page_list, start_index=1, model=None):
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    response = await utils.ChatGPT_API_async(model=model, prompt=prompt)
-    response = utils.extract_json(response)
+    response = await ChatGPT_API_async(model=model, prompt=prompt)
+    response = extract_json(response)
     if "answer" in response:
         answer = response["answer"]
     else:
@@ -72,8 +94,8 @@ async def check_title_appearance_in_start(title, page_text, model=None, logger=N
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    response = await utils.ChatGPT_API_async(model=model, prompt=prompt)
-    response = utils.extract_json(response)
+    response = await ChatGPT_API_async(model=model, prompt=prompt)
+    response = extract_json(response)
     if logger:
         logger.info(f"Response: {response}")
     return response.get("start_begin", "no")
@@ -130,9 +152,9 @@ def toc_detector_single_page(content, model=None):
     Directly return the final JSON structure. Do not output anything else.
     Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents."""
 
-    response = utils.ChatGPT_API(model=model, prompt=prompt)
+    response = ChatGPT_API(model=model, prompt=prompt)
     # print('response', response)
-    json_content = utils.extract_json(response)
+    json_content = extract_json(response)
     return json_content["toc_detected"]
 
 
@@ -149,8 +171,8 @@ def check_if_toc_extraction_is_complete(content, toc, model=None):
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + "\n Document:\n" + content + "\n Table of contents:\n" + toc
-    response = utils.ChatGPT_API(model=model, prompt=prompt)
-    json_content = utils.extract_json(response)
+    response = ChatGPT_API(model=model, prompt=prompt)
+    json_content = extract_json(response)
     return json_content["completed"]
 
 
@@ -173,8 +195,8 @@ def check_if_toc_transformation_is_complete(content, toc, model=None):
         + "\n Cleaned Table of contents:\n"
         + toc
     )
-    response = utils.ChatGPT_API(model=model, prompt=prompt)
-    json_content = utils.extract_json(response)
+    response = ChatGPT_API(model=model, prompt=prompt)
+    json_content = extract_json(response)
     return json_content["completed"]
 
 
@@ -186,7 +208,7 @@ def extract_toc_content(content, model=None):
 
     Directly return the full table of contents content. Do not output anything else."""
 
-    _result = utils.ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
+    _result = ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
     if not isinstance(_result, tuple):
         raise ValueError(
             f"Unexpected response from ChatGPT_API_with_finish_reason: {_result}"
@@ -202,7 +224,7 @@ def extract_toc_content(content, model=None):
         {"role": "assistant", "content": response},
     ]
     prompt = """please continue the generation of table of contents , directly output the remaining part of the structure"""
-    _result2 = utils.ChatGPT_API_with_finish_reason(
+    _result2 = ChatGPT_API_with_finish_reason(
         model=model, prompt=prompt, chat_history=chat_history
     )
     if not isinstance(_result2, tuple):
@@ -219,7 +241,7 @@ def extract_toc_content(content, model=None):
             {"role": "assistant", "content": response},
         ]
         prompt = """please continue the generation of table of contents , directly output the remaining part of the structure"""
-        _result3 = utils.ChatGPT_API_with_finish_reason(
+        _result3 = ChatGPT_API_with_finish_reason(
             model=model, prompt=prompt, chat_history=chat_history
         )
         if not isinstance(_result3, tuple):
@@ -255,8 +277,8 @@ def detect_page_index(toc_content, model=None):
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    response = utils.ChatGPT_API(model=model, prompt=prompt)
-    json_content = utils.extract_json(response)
+    response = ChatGPT_API(model=model, prompt=prompt)
+    json_content = extract_json(response)
     return json_content["page_index_given_in_toc"]
 
 
@@ -306,8 +328,8 @@ def toc_index_extractor(toc, content, model=None):
         + "\nDocument pages:\n"
         + content
     )
-    response = utils.ChatGPT_API(model=model, prompt=prompt)
-    json_content = utils.extract_json(response)
+    response = ChatGPT_API(model=model, prompt=prompt)
+    json_content = extract_json(response)
     return json_content
 
 
@@ -333,7 +355,7 @@ def toc_transformer(toc_content, model=None):
     Directly return the final JSON structure, do not output anything else. """
 
     prompt = init_prompt + "\n Given table of contents\n:" + toc_content
-    _toc_result = utils.ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
+    _toc_result = ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
     if not isinstance(_toc_result, tuple):
         raise ValueError(
             f"Unexpected response from ChatGPT_API_with_finish_reason: {_toc_result}"
@@ -343,11 +365,11 @@ def toc_transformer(toc_content, model=None):
         toc_content, last_complete, model
     )
     if if_complete == "yes" and finish_reason == "finished":
-        last_complete = utils.extract_json(last_complete)
-        cleaned_response = utils.convert_page_to_int(last_complete["table_of_contents"])
+        last_complete = extract_json(last_complete)
+        cleaned_response = convert_page_to_int(last_complete["table_of_contents"])
         return cleaned_response
 
-    last_complete = utils.get_json_content(last_complete)
+    last_complete = get_json_content(last_complete)
     while not (if_complete == "yes" and finish_reason == "finished"):
         position = last_complete.rfind("}")
         if position != -1:
@@ -364,7 +386,7 @@ def toc_transformer(toc_content, model=None):
 
         Please continue the json structure, directly output the remaining part of the json structure."""
 
-        _toc_result2 = utils.ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
+        _toc_result2 = ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
         if not isinstance(_toc_result2, tuple):
             raise ValueError(
                 f"Unexpected response from ChatGPT_API_with_finish_reason: {_toc_result2}"
@@ -372,7 +394,7 @@ def toc_transformer(toc_content, model=None):
         new_complete, finish_reason = _toc_result2
 
         if new_complete.startswith("```json"):
-            new_complete = utils.get_json_content(new_complete)
+            new_complete = get_json_content(new_complete)
             last_complete = last_complete + new_complete
 
         if_complete = check_if_toc_transformation_is_complete(
@@ -381,7 +403,7 @@ def toc_transformer(toc_content, model=None):
 
     last_complete = json.loads(last_complete)
 
-    cleaned_response = utils.convert_page_to_int(last_complete["table_of_contents"])
+    cleaned_response = convert_page_to_int(last_complete["table_of_contents"])
     return cleaned_response
 
 
@@ -543,8 +565,8 @@ def add_page_number_to_toc(part, structure, model=None):
         fill_prompt_seq
         + f"\n\nCurrent Partial Document:\n{part}\n\nGiven Structure\n{json.dumps(structure, indent=2)}\n"
     )
-    current_json_raw = utils.ChatGPT_API(model=model, prompt=prompt)
-    json_result = utils.extract_json(current_json_raw)
+    current_json_raw = ChatGPT_API(model=model, prompt=prompt)
+    json_result = extract_json(current_json_raw)
 
     for item in json_result:
         if "start" in item:
@@ -600,14 +622,14 @@ def generate_toc_continue(toc_content, part, model: str | None = "gpt-4o-2024-11
         + "\nPrevious tree structure\n:"
         + json.dumps(toc_content, indent=2)
     )
-    _cont_result = utils.ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
+    _cont_result = ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
     if not isinstance(_cont_result, tuple):
         raise ValueError(
             f"Unexpected response from ChatGPT_API_with_finish_reason: {_cont_result}"
         )
     response, finish_reason = _cont_result
     if finish_reason == "finished":
-        return utils.extract_json(response)
+        return extract_json(response)
     else:
         raise Exception(f"finish reason: {finish_reason}")
 
@@ -640,7 +662,7 @@ def generate_toc_init(part, model=None):
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + "\nGiven text\n:" + part
-    _init_result = utils.ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
+    _init_result = ChatGPT_API_with_finish_reason(model=model, prompt=prompt)
     if not isinstance(_init_result, tuple):
         raise ValueError(
             f"Unexpected response from ChatGPT_API_with_finish_reason: {_init_result}"
@@ -648,7 +670,7 @@ def generate_toc_init(part, model=None):
     response, finish_reason = _init_result
 
     if finish_reason == "finished":
-        return utils.extract_json(response)
+        return extract_json(response)
     else:
         raise Exception(f"finish reason: {finish_reason}")
 
@@ -659,7 +681,7 @@ def process_no_toc(page_list, start_index=1, model=None, logger=None):
     for page_index in range(start_index, start_index + len(page_list)):
         page_text = f"<physical_index_{page_index}>\n{page_list[page_index - start_index][0]}\n<physical_index_{page_index}>\n\n"
         page_contents.append(page_text)
-        token_lengths.append(utils.count_tokens(page_text, model))
+        token_lengths.append(count_tokens(page_text, model))
     group_texts = page_list_to_group_text(page_contents, token_lengths)
     if logger:
         logger.info(f"len(group_texts): {len(group_texts)}")
@@ -676,7 +698,7 @@ def process_no_toc(page_list, start_index=1, model=None, logger=None):
     if logger:
         logger.info(f"generate_toc: {toc_with_page_number}")
 
-    toc_with_page_number = utils.convert_physical_index_to_int(toc_with_page_number)
+    toc_with_page_number = convert_physical_index_to_int(toc_with_page_number)
     if logger:
         logger.info(f"convert_physical_index_to_int: {toc_with_page_number}")
 
@@ -694,7 +716,7 @@ def process_toc_no_page_numbers(
     for page_index in range(start_index, start_index + len(page_list)):
         page_text = f"<physical_index_{page_index}>\n{page_list[page_index - start_index][0]}\n<physical_index_{page_index}>\n\n"
         page_contents.append(page_text)
-        token_lengths.append(utils.count_tokens(page_text, model))
+        token_lengths.append(count_tokens(page_text, model))
 
     group_texts = page_list_to_group_text(page_contents, token_lengths)
     if logger:
@@ -708,7 +730,7 @@ def process_toc_no_page_numbers(
     if logger:
         logger.info(f"add_page_number_to_toc: {toc_with_page_number}")
 
-    toc_with_page_number = utils.convert_physical_index_to_int(toc_with_page_number)
+    toc_with_page_number = convert_physical_index_to_int(toc_with_page_number)
     if logger:
         logger.info(f"convert_physical_index_to_int: {toc_with_page_number}")
 
@@ -742,9 +764,7 @@ def process_toc_with_page_numbers(
     if logger:
         logger.info(f"toc_with_physical_index: {toc_with_physical_index}")
 
-    toc_with_physical_index = utils.convert_physical_index_to_int(
-        toc_with_physical_index
-    )
+    toc_with_physical_index = convert_physical_index_to_int(toc_with_physical_index)
     if logger:
         logger.info(f"toc_with_physical_index: {toc_with_physical_index}")
 
@@ -894,9 +914,9 @@ def single_toc_item_index_fixer(
         + "\nDocument pages:\n"
         + content
     )
-    response = utils.ChatGPT_API(model=model, prompt=prompt)
-    json_content = utils.extract_json(response)
-    return utils.convert_physical_index_to_int(json_content["physical_index"])
+    response = ChatGPT_API(model=model, prompt=prompt)
+    json_content = extract_json(response)
+    return convert_physical_index_to_int(json_content["physical_index"])
 
 
 async def fix_incorrect_toc(
@@ -1253,18 +1273,14 @@ async def process_large_node_recursively(node, page_list, opt=None, logger=None)
             valid_node_toc_items
             and node["title"].strip() == valid_node_toc_items[0]["title"].strip()
         ):
-            node["nodes"] = utils.post_processing(
-                valid_node_toc_items[1:], node["end_index"]
-            )
+            node["nodes"] = post_processing(valid_node_toc_items[1:], node["end_index"])
             node["end_index"] = (
                 valid_node_toc_items[1]["start_index"]
                 if len(valid_node_toc_items) > 1
                 else node["end_index"]
             )
         else:
-            node["nodes"] = utils.post_processing(
-                valid_node_toc_items, node["end_index"]
-            )
+            node["nodes"] = post_processing(valid_node_toc_items, node["end_index"])
             node["end_index"] = (
                 valid_node_toc_items[0]["start_index"]
                 if valid_node_toc_items
@@ -1305,7 +1321,7 @@ async def tree_parser(page_list, opt, doc=None, logger=None):
             page_list, mode="process_no_toc", start_index=1, opt=opt, logger=logger
         )
 
-    toc_with_page_number = utils.add_preface_if_needed(toc_with_page_number)
+    toc_with_page_number = add_preface_if_needed(toc_with_page_number)
     toc_with_page_number = await check_title_appearance_in_start_concurrent(
         toc_with_page_number, page_list, model=opt.model, logger=logger
     )
@@ -1315,7 +1331,7 @@ async def tree_parser(page_list, opt, doc=None, logger=None):
         item for item in toc_with_page_number if item.get("physical_index") is not None
     ]
 
-    toc_tree = utils.post_processing(valid_toc_items, len(page_list))
+    toc_tree = post_processing(valid_toc_items, len(page_list))
     tasks = [
         process_large_node_recursively(node, page_list, opt, logger=logger)
         for node in toc_tree
@@ -1326,7 +1342,7 @@ async def tree_parser(page_list, opt, doc=None, logger=None):
 
 
 def page_index_main(doc, opt=None):
-    logger = utils.JsonLogger(doc)
+    logger = JsonLogger(doc)
 
     is_valid_pdf = (
         isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".pdf")
@@ -1337,7 +1353,7 @@ def page_index_main(doc, opt=None):
         )
 
     print("Parsing PDF...")
-    page_list = utils.get_page_tokens(doc)
+    page_list = get_page_tokens(doc)
 
     logger.info({"total_page_number": len(page_list)})
     logger.info({"total_token": sum([page[1] for page in page_list])})
@@ -1347,30 +1363,28 @@ def page_index_main(doc, opt=None):
     async def page_index_builder():
         structure = await tree_parser(page_list, opt, doc=doc, logger=logger)
         if opt.if_add_node_id == "yes":
-            utils.write_node_id(structure)
+            write_node_id(structure)
         if opt.if_add_node_text == "yes":
-            utils.add_node_text(structure, page_list)
+            add_node_text(structure, page_list)
         if opt.if_add_node_summary == "yes":
             if opt.if_add_node_text == "no":
-                utils.add_node_text(structure, page_list)
-            await utils.generate_summaries_for_structure(structure, model=opt.model)
+                add_node_text(structure, page_list)
+            await generate_summaries_for_structure(structure, model=opt.model)
             if opt.if_add_node_text == "no":
-                utils.remove_structure_text(structure)
+                remove_structure_text(structure)
             if opt.if_add_doc_description == "yes":
                 # Create a clean structure without unnecessary fields for description generation
-                clean_structure = utils.create_clean_structure_for_description(
-                    structure
-                )
-                doc_description = utils.generate_doc_description(
+                clean_structure = create_clean_structure_for_description(structure)
+                doc_description = generate_doc_description(
                     clean_structure, model=opt.model
                 )
                 return {
-                    "doc_name": utils.get_pdf_name(doc),
+                    "doc_name": get_pdf_name(doc),
                     "doc_description": doc_description,
                     "structure": structure,
                 }
         return {
-            "doc_name": utils.get_pdf_name(doc),
+            "doc_name": get_pdf_name(doc),
             "structure": structure,
         }
 
@@ -1394,7 +1408,7 @@ def page_index(
         for arg, value in locals().items()
         if arg != "doc" and value is not None
     }
-    opt = utils.ConfigLoader().load(user_opt)
+    opt = ConfigLoader().load(user_opt)
     return page_index_main(doc, opt)
 
 
